@@ -994,6 +994,10 @@ def run_next_game_generator():
             key = _norm(opp_name)
             if key not in opp_logo_cache:
                 lf = find_logo(drive, logo_files, opp_name)
+                if not lf:
+                    # Fall back to the "no logo" placeholder file.
+                    errors.append('%s: NO LOGO found for opponent "%s" - using placeholder.' % (tag, opp_name))
+                    lf = find_by_basename(logo_files, 'no logo')
                 if lf:
                     try:
                         d = download_bytes(drive, lf['id'])
@@ -1003,7 +1007,7 @@ def run_next_game_generator():
                         errors.append('%s: opponent logo load failed (%s): %s' % (tag, opp_name, e))
                 else:
                     opp_logo_cache[key] = None
-                    errors.append('%s: NO LOGO found for opponent "%s".' % (tag, opp_name))
+                    errors.append('%s: "no logo" placeholder also not found.' % tag)
             opp_logo = opp_logo_cache[key]
             opp_colors = dominant_two_colours(opp_logo) if opp_logo else (WHITE, None)
 
