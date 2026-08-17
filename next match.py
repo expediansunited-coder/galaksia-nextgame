@@ -4,6 +4,14 @@ import re
 import unicodedata
 from datetime import datetime, timedelta
 
+import os
+import time
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
@@ -117,6 +125,31 @@ def get_gspread_client():
 def get_drive_service():
     return build('drive', 'v3', credentials=get_creds())
 
+# Required scope for managing files created or opened by the app
+SCOPES = ['https://www.googleapis.com/auth/drive']
+
+def get_user_drive_service(client_secrets_file='client_secret.json'):
+    """Authenticates the user using OAuth 2.0 and returns the Drive API service instance."""
+    creds = None
+    
+    # token.json stores the user's access and refresh tokens
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        
+    # If there are no valid credentials, trigger authorization flow
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(client_secrets_file, SCOPES)
+            creds = flow.run_local_server(port=0)
+            
+        # Save credentials for future unattended runs
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+
+    return build('drive', 'v3', credentials=creds)
+
 # ============================================================
 # NORMALIZE / MATCH
 # ============================================================
@@ -157,18 +190,45 @@ def list_folder(drive, folder_id):
 def download_bytes(drive, file_id):
     return drive.files().get_media(fileId=file_id).execute()
 
-def upload_public_image(drive, image_path, folder_id=None):
-    """Upload the image to catbox.moe, return (public_url, None)."""
-    with open(image_path, 'rb') as fh:
-        r = requests.post(
-            'https://catbox.moe/user/api.php',
-            data={'reqtype': 'fileupload'},
-            files={'fileToUpload': (os.path.basename(image_path), fh, 'image/png')})
-    r.raise_for_status()
-    url = r.text.strip()
-    if not url.startswith('http'):
-        raise RuntimeError('catbox upload failed: %s' % url)
-    return url, None
+
+def upload_public_image(drive, image_path, folder_id='1-MAJwpIAjQvzXQdsPdqmkX4NGrM8YFt5'):
+    """Uploads an image to Google Drive using your account quota and makes it publicly accessible."""
+    last_err = None
+    file_name = os.path.basename(image_path)
+    
+    file_metadata = {
+        'name': file_name,
+        'parents': [folder_id]
+    }
+    
+    media = MediaFileUpload(image_path, mimetype='image/png', resumable=True)
+
+    for attempt in range(4):
+        try:
+            # 1. Upload file
+            file = drive.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, webViewLink, webContentLink'
+            ).execute()
+            
+            file_id = file.get('id')
+
+            # 2. Make file publicly readable via link
+            drive.permissions().create(
+                fileId=file_id,
+                body={'type': 'anyone', 'role': 'reader'}
+            ).execute()
+
+            # Return direct link or web link
+            public_url = file.get('webContentLink') or file.get('webViewLink')
+            return public_url, file_id
+
+        except Exception as e:
+            last_err = str(e)
+            time.sleep(5 * (attempt + 1))
+
+    raise RuntimeError('Google Drive image upload failed after retries: %s' % last_err)
 
 def find_by_basename(files, name):
     """Match ignoring extension, accents, case, punctuation."""
@@ -773,16 +833,33 @@ def _ig_publish(ig_id, token, image_url, caption=None, is_story=False):
     p.raise_for_status()
     return p.json()
 
+def _get_page_token(page_id, user_token):
+    """Get the Page access token for a system-user token via me/accounts."""
+    r = requests.get('%s/me/accounts' % GRAPH,
+                     params={'access_token': user_token, 'limit': 200})
+    r.raise_for_status()
+    for p in r.json().get('data', []):
+        if str(p.get('id')) == str(page_id):
+            return p['access_token']
+    raise RuntimeError('Page %s not found in me/accounts' % page_id)
+
 def post_to_meta(image_path, caption, image_url=None, story_url=None):
     """FB feed + IG feed use image_url (4:5). FB/IG stories use story_url (9:16)."""
     cfg = load_meta_config()
     page_id = cfg['page_id']
     ig_id = cfg['ig_user_id']
-    token = cfg['page_access_token']
+    user_token = cfg['page_access_token']
 
     if not image_url:
         print('    [meta] ERROR: no public image_url provided; cannot post.')
         return
+
+    try:
+        token = _get_page_token(page_id, user_token)  # Page token for FB
+    except Exception as e:
+        print('    [meta] could not derive Page token: %s' % e)
+        token = user_token
+    ig_token = user_token
 
     try:
         _fb_page_photo(page_id, token, image_url, caption, published=True)
@@ -799,13 +876,13 @@ def post_to_meta(image_path, caption, image_url=None, story_url=None):
         print('    [meta] FB story FAILED: %s' % e)
 
     try:
-        _ig_publish(ig_id, token, image_url, caption=caption, is_story=False)
+        _ig_publish(ig_id, ig_token, image_url, caption=caption, is_story=False)
         print('    [meta] IG feed OK')
     except Exception as e:
         print('    [meta] IG feed FAILED: %s' % e)
 
     try:
-        _ig_publish(ig_id, token, story_url or image_url, is_story=True)
+        _ig_publish(ig_id, ig_token, story_url or image_url, is_story=True)
         print('    [meta] IG story OK')
     except Exception as e:
         print('    [meta] IG story FAILED: %s' % e)
@@ -885,6 +962,7 @@ def run_next_game_generator():
     print('Auth...')
     client = get_gspread_client()
     drive = get_drive_service()
+    user_drive = get_user_drive_service()
 
     print('Reading Index...')
     team_league = build_team_league_map(client)
@@ -1055,15 +1133,24 @@ def run_next_game_generator():
 
         caption = build_caption(gp_label, opp_name, gp_side, match_type,
                                 league, round_num, d_str, loc, time_str)
+        feed_id = story_id = None
         try:
-            feed_url, _ = upload_public_image(drive, out_path, POST_UPLOAD_FOLDER_ID)
+            feed_url, feed_id = upload_public_image(user_drive, out_path, POST_UPLOAD_FOLDER_ID)
             print('  feed url: %s' % feed_url)
             story_path = make_story_version(out_path)
-            story_url, _ = upload_public_image(drive, story_path, POST_UPLOAD_FOLDER_ID)
+            story_url, story_id = upload_public_image(user_drive, story_path, POST_UPLOAD_FOLDER_ID)
             print('  story url: %s' % story_url)
             post_to_meta(out_path, caption, image_url=feed_url, story_url=story_url)
         except Exception as e:
             errors.append('%s: Meta posting failed: %s' % (tag, e))
+        finally:
+            for fid in (feed_id, story_id):
+                if fid:
+                    try:
+                        user_drive.files().delete(fileId=fid).execute()
+                        print('  deleted temp Drive file %s' % fid)
+                    except Exception as e:
+                        print('  could not delete %s: %s' % (fid, e))
 
     print('Done. Generated %d image(s), %d error(s).' % (generated, len(errors)))
     send_error_email(errors)
