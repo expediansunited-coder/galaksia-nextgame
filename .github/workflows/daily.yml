@@ -2,8 +2,7 @@ name: Daily Next Game Post
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # ~11:00 Prague summer
-    - cron: '0 10 * * *'  # ~11:00 Prague winter
+    - cron: '0 9 * * *'   # 11:00 Prague (summer) / 10:00 (winter)
   workflow_dispatch:
 
 jobs:
