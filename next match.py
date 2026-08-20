@@ -708,7 +708,10 @@ def build_image(fixture, bg_src, font_path,
     opp_l, opp_r = opp_dark, opp_light
 
     gp_img = render_name(font_path, gp_label, NAME_MAX_W, NAME_SIZE, gp_l, gp_r)
-    opp_img = render_name(font_path, opp_name.upper(), NAME_MAX_W, NAME_SIZE, opp_l, opp_r)
+    opp_display = opp_name
+    if opp_name.strip().upper() in [t.upper() for t in OUR_TEAMS]:
+        opp_display = galaksia_label(opp_name)
+    opp_img = render_name(font_path, opp_display.upper(), NAME_MAX_W, NAME_SIZE, opp_l, opp_r)
     gp_img = gp_img.rotate(-0.5, expand=True, resample=Image.BICUBIC)
     opp_img = opp_img.rotate(-0.5, expand=True, resample=Image.BICUBIC)
     paste_centered(bg, gp_img, gp_cx, NAME_CY)
@@ -773,10 +776,14 @@ def make_story_version(feed_img_path):
 def build_caption(gp_label, opp_name, gp_side, match_type, league,
                   round_num, date_str, loc_str, time_str):
     home_away = 'at home' if gp_side == 'left' else 'away'
+    opp_display = opp_name
+    if opp_name.strip().upper() in [t.upper() for t in OUR_TEAMS]:
+        opp_display = galaksia_label(opp_name).title()
+
     if gp_side == 'left':
-        matchup = '%s vs %s' % (gp_label.title(), opp_name)
+        matchup = '%s vs %s' % (gp_label.title(), opp_display)
     else:
-        matchup = '%s vs %s' % (opp_name, gp_label.title())
+        matchup = '%s vs %s' % (opp_display, gp_label.title())
 
     mt = (match_type or '').lower()
     if mt == 'friendly':
