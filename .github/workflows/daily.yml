@@ -5,12 +5,17 @@ on:
     - cron: '0 9 * * *'   # 11:00 Prague (summer) / 10:00 (winter)
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,8 +29,27 @@ jobs:
         run: |
           echo '${{ secrets.CREDENTIALS_JSON }}' > credentials.json
           echo '${{ secrets.META_CONFIG_JSON }}' > meta_config.json
-          echo '${{ secrets.TOKEN_JSON }}' > token.json
-          echo '${{ secrets.CLIENT_SECRET_JSON }}' > client_secret.json
 
-      - name: Run script
-        run: python "next match.py"
+      - name: Generate images
+        run: python "next match.py" --generate-only
+
+      - name: Commit generated images
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add output/*.png
+          git commit -m "Add generated match images" || echo "nothing to commit"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
+
+      - name: Post to Meta
+        run: python "next match.py" --post-only
+
+      - name: Remove generated images
+        run: |
+          git rm -f output/*.png || echo "nothing to remove"
+          git commit -m "Clean up generated images" || echo "nothing to commit"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
