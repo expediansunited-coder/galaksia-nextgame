@@ -981,7 +981,6 @@ def run_next_game_generator():
     print('Auth...')
     client = get_gspread_client()
     drive = get_drive_service()
-    user_drive = get_user_drive_service()
 
     print('Reading Index...')
     team_league = build_team_league_map(client)
@@ -1152,28 +1151,31 @@ def run_next_game_generator():
 
         caption = build_caption(gp_label, opp_name, gp_side, match_type,
                                 league, round_num, d_str, loc, time_str)
-        feed_id = story_id = None
-        try:
-            feed_url, feed_id = upload_public_image(user_drive, out_path, POST_UPLOAD_FOLDER_ID)
+        story_path = make_story_version(out_path)
+
+        if POST_ONLY:
+            repo_raw = 'https://raw.githubusercontent.com/expediansunited-coder/galaksia-nextgame/main/'
+            feed_url = repo_raw + out_path.replace('\\', '/')
+            story_url = repo_raw + story_path.replace('\\', '/')
             print('  feed url: %s' % feed_url)
-            story_path = make_story_version(out_path)
-            story_url, story_id = upload_public_image(user_drive, story_path, POST_UPLOAD_FOLDER_ID)
             print('  story url: %s' % story_url)
-            post_to_meta(out_path, caption, image_url=feed_url, story_url=story_url)
-        except Exception as e:
-            errors.append('%s: Meta posting failed: %s' % (tag, e))
-        finally:
-            for fid in (feed_id, story_id):
-                if fid:
-                    try:
-                        user_drive.files().delete(fileId=fid).execute()
-                        print('  deleted temp Drive file %s' % fid)
-                    except Exception as e:
-                        print('  could not delete %s: %s' % (fid, e))
+            try:
+                post_to_meta(out_path, caption, image_url=feed_url, story_url=story_url)
+            except Exception as e:
+                errors.append('%s: Meta posting failed: %s' % (tag, e))
+        else:
+            print('  generate-only: image saved, not posting.')
 
     print('Done. Generated %d image(s), %d error(s).' % (generated, len(errors)))
     send_error_email(errors)
 
+
+import sys
+GENERATE_ONLY = '--generate-only' in sys.argv
+POST_ONLY = '--post-only' in sys.argv
+if not GENERATE_ONLY and not POST_ONLY:
+    GENERATE_ONLY = True
+    POST_ONLY = True
 
 if __name__ == '__main__':
     run_next_game_generator()
