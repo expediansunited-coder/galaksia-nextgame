@@ -37,7 +37,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add output/*.png
+          git add output/*.png 2>/dev/null || echo "no images to add"
           git commit -m "Add generated match images" || echo "nothing to commit"
           git fetch origin main
           git rebase origin/main
