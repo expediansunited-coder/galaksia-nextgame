@@ -631,7 +631,7 @@ def date_line(match_date):
 
 def clean_team_name(name):
     s = (name or '').strip()
-    s = re.sub(r'\s*,?\s*(z\.s\.|a\.s\.)\s*$', '', s, flags=re.I)
+    s = re.sub(r'\s*,?\s*(z\.\s*s\.|a\.\s*s\.)\s*$', '', s, flags=re.I)
     return s.strip()
 
 # ============================================================
