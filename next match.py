@@ -151,6 +151,31 @@ def get_user_drive_service(client_secrets_file='client_secret.json'):
     return build('drive', 'v3', credentials=creds)
 
 # ============================================================
+# API RETRY
+# ============================================================
+from gspread.exceptions import APIError
+
+def with_retry(func, *args, retries=6, base_delay=3, **kwargs):
+    """Retry a gspread call on transient errors (429/500/502/503)."""
+    import random as _r
+    for attempt in range(retries):
+        try:
+            return func(*args, **kwargs)
+        except APIError as e:
+            code = None
+            try:
+                code = e.response.status_code
+            except Exception:
+                pass
+            transient = code in (429, 500, 502, 503) or code is None
+            if not transient or attempt == retries - 1:
+                raise
+            delay = base_delay * (2 ** attempt) + _r.uniform(0, 1)
+            print('  [retry] API %s - attempt %d/%d, waiting %.1fs'
+                  % (code, attempt + 1, retries, delay))
+            time.sleep(delay)
+
+# ============================================================
 # NORMALIZE / MATCH
 # ============================================================
 def _norm(s):
@@ -946,8 +971,9 @@ def parse_time(value):
     return None
 
 def build_team_league_map(client):
-    ws = client.open_by_key(FIXTURES_SHEET_ID).worksheet(INDEX_TAB)
-    data = ws.get_all_values()
+    ss = with_retry(client.open_by_key, FIXTURES_SHEET_ID)
+    ws = ss.worksheet(INDEX_TAB)
+    data = with_retry(ws.get_all_values)
     mapping = {}
     for row in data[1:]:
         if len(row) <= max(IDX_TEAM, IDX_LEAGUE):
@@ -1016,10 +1042,10 @@ def run_next_game_generator():
 
     # ---- Phase 1: collect ALL Completed fixtures for our teams (both tabs) ----
     all_fx = []
-    ss = client.open_by_key(FIXTURES_SHEET_ID)
+    ss = with_retry(client.open_by_key, FIXTURES_SHEET_ID)
     for tab in (FRIENDLY_TAB, LEAGUECUP_TAB):
         ws = ss.worksheet(tab)
-        data = ws.get_all_values()
+        data = with_retry(ws.get_all_values)
         for i, row in enumerate(data[1:], start=2):
             if len(row) <= FX_STATUS:
                 continue
