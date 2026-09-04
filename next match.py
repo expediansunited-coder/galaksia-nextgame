@@ -656,7 +656,7 @@ def date_line(match_date):
 
 def clean_team_name(name):
     s = (name or '').strip()
-    s = re.sub(r'\s*,?\s*(z\.\s*s\.|a\.\s*s\.)\s*$', '', s, flags=re.I)
+    s = re.sub(r'\s*,?\s*(z\.\s*s\.|a\.\s*s\.)\s*', ' ', s, flags=re.I)
     return s.strip()
 
 # ============================================================
@@ -1071,25 +1071,27 @@ def run_next_game_generator():
     # ---- The posting rule ----
     def should_post(fx):
         days = (fx['date'] - today).days
-        # Condition 1: exactly 3 days away AND no match between today and F
+        our_upper = [t.upper() for t in OUR_TEAMS]  # 11A / 11B / 11C
+        # Condition 1: exactly 3 days away AND no match for ANY of our teams between today and F
         if days == 3:
             between = [g for g in all_fx
-                       if g['gp_team'] == fx['gp_team']
+                       if g['gp_team'] in our_upper
                        and today <= g['date'] < fx['date']]
             if not between:
                 return True
-        # Condition 2: within 3 days AND most recent previous match was yesterday
+        # Condition 2: within 3 days AND the most recent previous match of ANY of our teams was yesterday
         if 0 <= days <= 3:
             prev = [g['date'] for g in all_fx
-                    if g['gp_team'] == fx['gp_team'] and g['date'] < today]
+                    if g['gp_team'] in our_upper and g['date'] < today]
             if prev and (today - max(prev)).days == 1:
                 return True
         return False
 
-    # ---- Phase 2: build + post ----
-    for fx in all_fx:
-        if not should_post(fx):
-            continue
+    # ---- Phase 2: build + post (earliest kick-off first) ----
+    def _sort_key(fx):
+        t = parse_time(fx['row'][FX_TIME]) or '99:99'
+        return (fx['date'], t)
+    all_fx.sort(key=_sort_key)
 
         tab = fx['tab']; i = fx['row_i']; row = fx['row']
         gp_team = fx['gp_team']; opp_name = clean_team_name(fx['opp_name'])
