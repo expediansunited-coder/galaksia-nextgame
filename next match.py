@@ -1087,11 +1087,15 @@ def run_next_game_generator():
                 return True
         return False
 
-    # ---- Phase 2: build + post (earliest kick-off first) ----
+# ---- Phase 2: build + post (earliest kick-off first) ----
     def _sort_key(fx):
         t = parse_time(fx['row'][FX_TIME]) or '99:99'
         return (fx['date'], t)
     all_fx.sort(key=_sort_key)
+
+    for fx in all_fx:
+        if not should_post(fx):
+            continue
 
         tab = fx['tab']; i = fx['row_i']; row = fx['row']
         gp_team = fx['gp_team']; opp_name = clean_team_name(fx['opp_name'])
