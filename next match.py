@@ -198,6 +198,27 @@ def _tokens(s):
 # ============================================================
 # DRIVE HELPERS
 # ============================================================
+def get_background_for_team(drive, asset_files, team, default_background):
+    """
+    Uses team-specific background if available:
+      11A.png / 11A.jpg / etc.
+      11B.png / 11B.jpg / etc.
+
+    Falls back to the default BACKGROUND_NAME background.
+    Matching ignores extension, accents, case, punctuation.
+    """
+    team = (team or '').strip().upper()
+
+    if team in ('11A', '11B'):
+        bg = download_image_from(drive, asset_files, team)
+        if bg is not None:
+            print('  Using team-specific background: %s' % team)
+            return bg
+
+        print('  Team-specific background "%s" not found, using default.' % team)
+
+    return default_background
+
 def list_folder(drive, folder_id):
     out = []
     page_token = None
@@ -1163,9 +1184,11 @@ def run_next_game_generator():
         header_str = header_text(match_type, league, round_num)
         d_str = date_line(m_date)
 
+        team_background = get_background_for_team(drive, asset_files, gp_team, background)
+
         try:
             img = build_image(
-                row, background, font_path,
+                row, team_background, font_path,
                 gp_logo, opp_logo, league_logo,
                 gp_side, opp_name, gp_label,
                 gp_colors, opp_colors, header_str,
