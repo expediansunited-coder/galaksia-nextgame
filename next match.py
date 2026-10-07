@@ -1093,19 +1093,46 @@ def run_next_game_generator():
     def should_post(fx):
         days = (fx['date'] - today).days
         our_upper = [t.upper() for t in OUR_TEAMS]  # 11A / 11B / 11C
-        # Condition 1: exactly 3 days away AND no match for ANY of our teams between today and F
+    
+        if days < 0:
+            return False
+    
+        # Condition 1:
+        # Normally post exactly 3 days before, unless another Galaksia match happens before it.
+        # Exception:
+        # If the blocking match is directly the day before this match, then waiting would cause
+        # the post to happen on matchday, so we post now anyway.
         if days == 3:
-            between = [g for g in all_fx
-                       if g['gp_team'] in our_upper
-                       and today <= g['date'] < fx['date']]
+            between = [
+                g for g in all_fx
+                if g['gp_team'] in our_upper
+                and today <= g['date'] < fx['date']
+            ]
+    
             if not between:
                 return True
-        # Condition 2: within 3 days AND the most recent previous match of ANY of our teams was yesterday
-        if 0 <= days <= 3:
-            prev = [g['date'] for g in all_fx
-                    if g['gp_team'] in our_upper and g['date'] < today]
+    
+            latest_between_date = max(g['date'] for g in between)
+    
+            # New priority rule:
+            # If the previous Galaksia match is exactly one day before this fixture,
+            # do not wait until the day after, because that would be matchday.
+            if (fx['date'] - latest_between_date).days == 1:
+                return True
+    
+        # Condition 2:
+        # If another Galaksia match happened yesterday, post upcoming match(es) within 3 days.
+        # But never post on the same day as the match.
+        if 1 <= days <= 3:
+            prev = [
+                g['date'] for g in all_fx
+                if g['gp_team'] in our_upper
+                and g['date'] < today
+            ]
+    
             if prev and (today - max(prev)).days == 1:
                 return True
+    
         return False
 
 # ---- Phase 2: build + post (earliest kick-off first) ----
