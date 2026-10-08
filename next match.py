@@ -802,8 +802,19 @@ def make_story_version(feed_img_path):
 # ============================================================
 # CAPTION
 # ============================================================
+def team_partner_line(gp_team):
+    team = (gp_team or '').strip().upper()
+
+    if team == '11A':
+        return "\nTeam partner: @movetoprague"
+
+    if team == '11B':
+        return "\nTeam partner: @coconuculture.eu"
+
+    return ""
+
 def build_caption(gp_label, opp_name, gp_side, match_type, league,
-                  round_num, date_str, loc_str, time_str):
+                  round_num, date_str, loc_str, time_str, gp_team):
     home_away = 'at home' if gp_side == 'left' else 'away'
     opp_display = opp_name
     if opp_name.strip().upper() in [t.upper() for t in OUR_TEAMS]:
@@ -822,6 +833,8 @@ def build_caption(gp_label, opp_name, gp_side, match_type, league,
     else:
         comp = '%s%s' % (league, (' – Game %s' % round_num) if round_num else '')
 
+    partner = team_partner_line(gp_team)
+
     caption = (
         "⚫️⚪️🟢 NEXT GAME!\n\n"
         "%s\n"
@@ -829,10 +842,10 @@ def build_caption(gp_label, opp_name, gp_side, match_type, league,
         "📅 %s\n"
         "🕒 Kick off %s\n"
         "📍 %s (%s)\n\n"
-        "Come support the boys! 💪\n\n"
+        "Come support the boys! 💪%s\n\n"
         "#GalaksiaPraha23 #GP23 #NextGame #Prague #Praha #PragueFootball "
         "#Fotbal #BlackWhiteGreen #GreenArmy #Matchday #COYG #FootballFamily"
-        % (matchup, comp, date_str.title(), time_str, loc_str, home_away)
+        % (matchup, comp, date_str.title(), time_str, loc_str, home_away, partner)
     )
     return caption
 
@@ -1200,7 +1213,7 @@ def run_next_game_generator():
         generated += 1
 
         caption = build_caption(gp_label, opp_name, gp_side, match_type,
-                                league, round_num, d_str, loc, time_str)
+                        league, round_num, d_str, loc, time_str, gp_team)
         story_path = make_story_version(out_path)
 
         if POST_ONLY:
