@@ -671,8 +671,10 @@ def date_line(match_date):
 
 def clean_team_name(name):
     s = (name or '').strip()
+    s = re.sub(r'["“”„]\s*([A-Za-z])\s*["“”„]', r' \1', s)
     s = re.sub(r'\s*,?\s*(z\.\s*s\.|a\.\s*s\.)\s*', ' ', s, flags=re.I)
-    return s.strip()
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
 
 # ============================================================
 # IMAGE BUILD
@@ -1136,7 +1138,8 @@ def run_next_game_generator():
 # ---- Phase 2: build + post (earliest kick-off first) ----
     def _sort_key(fx):
         t = parse_time(fx['row'][FX_TIME]) or '99:99'
-        return (fx['date'], t)
+        team_order = {'11A': 1, '11B': 2, '11C': 3}
+        return (fx['date'], t, team_order.get(fx['gp_team'], 99))
     all_fx.sort(key=_sort_key)
 
     for fx in all_fx:
