@@ -49,7 +49,6 @@ OUR_TEAMS = ['11A', '11B', '11C']
 # --- Drive folders ---
 LOGO_FOLDER_ID = '19NNyf1trl1LoA7Tth7PFMbRAv65oXeeR'      # opposition + galaksia logos
 ASSETS_FOLDER_ID = '1aQ1ay_nCSQptlPyigVvzwbkReIdKioZV'    # background + font
-LEAGUE_LOGO_FOLDER_ID = '19NNyf1trl1LoA7Tth7PFMbRAv65oXeeR'  # league logos
 POST_UPLOAD_FOLDER_ID = '1-MAJwpIAjQvzXQdsPdqmkX4NGrM8YFt5'
 
 BACKGROUND_NAME = '11-a-side'
@@ -101,11 +100,6 @@ BOTTOM_L1_CY = int(CANVAS_H * 0.885)
 BOTTOM_L2_CY = int(CANVAS_H * 0.915)
 BOTTOM_SIZE = int(CANVAS_H * 0.027)      # date | location
 BOTTOM_SIZE2 = int(CANVAS_H * 0.024)     # kick off (smaller)
-
-# League logo bottom-left
-LEAGUE_LOGO_MAX = int(CANVAS_W * 0.10)
-LEAGUE_LOGO_CX = int(CANVAS_W * 0.50)     # horizontally centered
-LEAGUE_LOGO_CY = int(CANVAS_H * 0.965)    # under the kick-off line
 
 # ============================================================
 # AUTH
@@ -684,7 +678,7 @@ def clean_team_name(name):
 # IMAGE BUILD
 # ============================================================
 def build_image(fixture, bg_src, font_path,
-                gp_logo, opp_logo, league_logo,
+                gp_logo, opp_logo,
                 gp_side, opp_name, gp_label,
                 gp_colors, opp_colors, header_str,
                 date_str, loc_str, time_str, match_type):
@@ -772,17 +766,6 @@ def build_image(fixture, bg_src, font_path,
     i2 = gradient_text(None, l2, f2, WHITE, WHITE)
     paste_centered(bg, i1, CANVAS_W // 2, BOTTOM_L1_CY)
     paste_centered(bg, i2, CANVAS_W // 2, BOTTOM_L2_CY)
-
-    # --- League logo bottom-center, under kick-off (not for friendlies) ---
-    if league_logo is not None and (match_type or '').strip().lower() != 'friendly':
-        lg = remove_edge_background(league_logo)
-        cb = lg.getbbox()
-        if cb:
-            lg = lg.crop(cb)
-        lg.thumbnail((LEAGUE_LOGO_MAX, LEAGUE_LOGO_MAX), Image.LANCZOS)
-        lx = int(LEAGUE_LOGO_CX - lg.width / 2)
-        ly = int(LEAGUE_LOGO_CY - lg.height / 2)
-        bg.alpha_composite(lg, (lx, ly))
 
     return bg.convert('RGB')
 
@@ -1035,7 +1018,6 @@ def run_next_game_generator():
     print('Listing Drive folders...')
     logo_files = list_folder(drive, LOGO_FOLDER_ID)
     asset_files = list_folder(drive, ASSETS_FOLDER_ID)
-    league_files = list_folder(drive, LEAGUE_LOGO_FOLDER_ID)
 
     print('Loading background + font...')
     background = download_image_from(drive, asset_files, BACKGROUND_NAME)
@@ -1058,7 +1040,6 @@ def run_next_game_generator():
     print('Today: %s' % today)
 
     opp_logo_cache = {}
-    league_logo_cache = {}
     generated = 0
 
     # ---- Phase 1: collect ALL Completed fixtures for our teams (both tabs) ----
@@ -1092,47 +1073,51 @@ def run_next_game_generator():
     # ---- The posting rule ----
     def should_post(fx):
         days = (fx['date'] - today).days
-        our_upper = [t.upper() for t in OUR_TEAMS]  # 11A / 11B / 11C
-    
+        our_upper = [t.upper() for t in OUR_TEAMS]
+
         if days < 0:
             return False
-    
-        # Condition 1:
-        # Normally post exactly 3 days before, unless another Galaksia match happens before it.
-        # Exception:
-        # If the blocking match is directly the day before this match, then waiting would cause
-        # the post to happen on matchday, so we post now anyway.
+
+        if days >= 3:
+            match_days = set(
+                (g['date'] - today).days
+                for g in all_fx
+                if g['gp_team'] in our_upper
+                and (g['date'] - today).days >= 0
+            )
+
+            if 3 in match_days:
+                for d in range(3, days + 1):
+                    if d not in match_days:
+                        break
+                else:
+                    return True
+
         if days == 3:
             between = [
                 g for g in all_fx
                 if g['gp_team'] in our_upper
                 and today <= g['date'] < fx['date']
             ]
-    
+
             if not between:
                 return True
-    
+
             latest_between_date = max(g['date'] for g in between)
-    
-            # New priority rule:
-            # If the previous Galaksia match is exactly one day before this fixture,
-            # do not wait until the day after, because that would be matchday.
+
             if (fx['date'] - latest_between_date).days == 1:
                 return True
-    
-        # Condition 2:
-        # If another Galaksia match happened yesterday, post upcoming match(es) within 3 days.
-        # But never post on the same day as the match.
+
         if 1 <= days <= 3:
             prev = [
                 g['date'] for g in all_fx
                 if g['gp_team'] in our_upper
                 and g['date'] < today
             ]
-    
+
             if prev and (today - max(prev)).days == 1:
                 return True
-    
+
         return False
 
 # ---- Phase 2: build + post (earliest kick-off first) ----
@@ -1190,23 +1175,6 @@ def run_next_game_generator():
         if opp_logo is None:
             continue
 
-        if league:
-            lk = _norm(league)
-            if lk not in league_logo_cache:
-                lf = find_logo(drive, league_files, league)
-                if lf:
-                    try:
-                        d = download_bytes(drive, lf['id'])
-                        league_logo_cache[lk] = Image.open(io.BytesIO(d)).convert('RGBA')
-                    except Exception:
-                        league_logo_cache[lk] = None
-                else:
-                    league_logo_cache[lk] = None
-                    errors.append('%s: no league logo for "%s".' % (tag, league))
-            league_logo = league_logo_cache[lk]
-        else:
-            league_logo = None
-
         gp_label = galaksia_label(gp_team)
         header_str = header_text(match_type, league, round_num)
         d_str = date_line(m_date)
@@ -1216,7 +1184,7 @@ def run_next_game_generator():
         try:
             img = build_image(
                 row, team_background, font_path,
-                gp_logo, opp_logo, league_logo,
+                gp_logo, opp_logo,
                 gp_side, opp_name, gp_label,
                 gp_colors, opp_colors, header_str,
                 d_str, loc, time_str, match_type)
