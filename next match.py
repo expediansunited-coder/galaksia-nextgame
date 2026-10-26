@@ -1069,7 +1069,9 @@ def run_next_game_generator():
             m_date = parse_date(row[FX_DATE])
             if not m_date:
                 continue
-            if (row[FX_STATUS] or '').strip() != 'Completed':
+            status = (row[FX_STATUS] or '').strip()
+
+            if status not in ('Completed', 'Next Game Posted'):
                 continue
             home = (row[FX_HOME] or '').strip()
             away = (row[FX_AWAY] or '').strip()
@@ -1083,10 +1085,15 @@ def run_next_game_generator():
                 'match_type': (row[FX_TYPE] or '').strip(),
                 'round': (row[FX_ROUND] or '').strip(),
                 'loc': (row[FX_LOC] or '').strip(),
+                'ws': ws,
+                'status': status,
             })
 
     # ---- The posting rule ----
     def should_post(fx):
+        if fx.get('status') != 'Completed':
+            return False
+        
         days = (fx['date'] - today).days
         our_upper = [t.upper() for t in OUR_TEAMS]
 
@@ -1227,6 +1234,9 @@ def run_next_game_generator():
             print('  story url: %s' % story_url)
             try:
                 post_to_meta(out_path, caption, image_url=feed_url, story_url=story_url)
+                with_retry(fx['ws'].update_cell, i, FX_STATUS + 1, 'Next Game Posted')
+                fx['status'] = 'Next Game Posted'
+                print('  status updated: Next Game Posted')
             except Exception as e:
                 errors.append('%s: Meta posting failed: %s' % (tag, e))
         else:
