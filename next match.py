@@ -1100,6 +1100,18 @@ def run_next_game_generator():
         if days < 0:
             return False
 
+        has_match_today = any(
+            g['gp_team'] in our_upper
+            and (g['date'] - today).days == 0
+            for g in all_fx
+        )
+
+        if days == 0:
+            return True
+
+        if has_match_today:
+            return False
+
         if days >= 3:
             match_days = set(
                 (g['date'] - today).days
