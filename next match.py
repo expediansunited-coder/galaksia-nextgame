@@ -1090,69 +1090,57 @@ def run_next_game_generator():
             })
 
     # ---- The posting rule ----
+    our_upper = [t.upper() for t in OUR_TEAMS]
+
+    gp_match_dates = sorted(set(
+        g['date']
+        for g in all_fx
+        if g['gp_team'] in our_upper
+    ))
+
+    post_date_cache = {}
+
+    def posting_date_for_match_date(match_date):
+        if match_date in post_date_cache:
+            return post_date_cache[match_date]
+
+        previous_dates = [d for d in gp_match_dates if d < match_date]
+
+        if not previous_dates:
+            post_date = match_date - timedelta(days=3)
+        else:
+            previous_date = previous_dates[-1]
+            gap = (match_date - previous_date).days
+
+            if gap == 1:
+                # Previous match is one day before this match.
+                # Posting after it would be the same day as this match,
+                # so this match joins the previous match's posting group.
+                post_date = posting_date_for_match_date(previous_date)
+
+            elif gap <= 3:
+                # Previous match is inside the 3-day window,
+                # but there is still at least one free day after it.
+                post_date = previous_date + timedelta(days=1)
+
+            else:
+                # No blocking match inside the 3-day window.
+                post_date = match_date - timedelta(days=3)
+
+        post_date_cache[match_date] = post_date
+        return post_date
+
     def should_post(fx):
         if fx.get('status') != 'Completed':
             return False
-        
-        days = (fx['date'] - today).days
-        our_upper = [t.upper() for t in OUR_TEAMS]
 
-        if days < 0:
+        # Absolute rule: never post on the same day as the match.
+        if fx['date'] <= today:
             return False
 
-        has_match_today = any(
-            g['gp_team'] in our_upper
-            and (g['date'] - today).days == 0
-            for g in all_fx
-        )
+        post_date = posting_date_for_match_date(fx['date'])
 
-        if days == 0:
-            return True
-
-        if has_match_today:
-            return False
-
-        if days >= 3:
-            match_days = set(
-                (g['date'] - today).days
-                for g in all_fx
-                if g['gp_team'] in our_upper
-                and (g['date'] - today).days >= 0
-            )
-
-            if 3 in match_days:
-                for d in range(3, days + 1):
-                    if d not in match_days:
-                        break
-                else:
-                    return True
-
-        if days == 3:
-            between = [
-                g for g in all_fx
-                if g['gp_team'] in our_upper
-                and today <= g['date'] < fx['date']
-            ]
-
-            if not between:
-                return True
-
-            latest_between_date = max(g['date'] for g in between)
-
-            if (fx['date'] - latest_between_date).days == 1:
-                return True
-
-        if 1 <= days <= 3:
-            prev = [
-                g['date'] for g in all_fx
-                if g['gp_team'] in our_upper
-                and g['date'] < today
-            ]
-
-            if prev and (today - max(prev)).days == 1:
-                return True
-
-        return False
+        return today == post_date
 
 # ---- Phase 2: build + post (earliest kick-off first) ----
     def _sort_key(fx):
