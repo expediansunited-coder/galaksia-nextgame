@@ -811,7 +811,7 @@ def team_partner_line(gp_team):
         return "\nTeam partner: @movetoprague"
 
     if team == '11B':
-        return "\nTeam partner: @coconuculture.eu"
+        return "\nTeam partner: @coconutculture.eu"
 
     return ""
 
